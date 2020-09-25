@@ -1,0 +1,861 @@
+<?xml version="1.0"?>
+<?xml-stylesheet type="text/xsl" href="rfc2629.xslt"?>
+<!DOCTYPE rfc SYSTEM "rfc2629.dtd">
+
+<?rfc toc="yes" ?>
+<?rfc compact="yes" ?>
+<?rfc symrefs="yes" ?>
+<?rfc subcompact="no" ?>
+<?rfc comments="yes" ?>
+<?rfc inline="yes" ?>
+
+<rfc ipr="trust200902" docName="draft-vanrein-internetwide-realm-crossover-00" category="std">
+
+<front>
+
+	<title abbrev="InternetWide Realm Crossover">InternetWide Identities with Realm Crossover</title>
+
+	<author initials="R" surname="Van Rein" fullname="Rick van Rein">
+		<organization>InternetWide.org</organization>
+		<address>
+			<postal>
+				<street>Haarlebrink 5</street>
+				<city>Enschede</city>
+				<region>Overijssel</region>
+				<code>7544 WP</code>
+				<country>The Netherlands</country>
+			</postal>
+			<email>rick@openfortress.nl</email>
+		</address>
+	</author>
+
+	<date day="6" month="October" year="2015"/>
+
+	<abstract>
+	<t>Domains and domain user identities are available in many protocols,
+	and can be expressed as part of the URI grammar.  This document
+	outlines how clients can bring their self-controlled identities over
+	when crossing over to foreign realms that rely on authenticated
+	user identities.</t>
+	</abstract>
+
+</front>
+
+
+<!--
+
+intro:
+
+ + identities are user@domain.name or just domain.name
+ + stepwise delegation of authority over naming
+ + client and server identity differ
+ + client has a realm
+ + realms resolve through a domain, DNSSEC/DANE can secure interactions
+ + hosts are first mapped to a domain, then continued as [user@]domain
+
+uses:
+
+ + realm crossover can handle different domains for client and server
+ + realm crossover needs to be for all protocols
+ + many protocols can be used globally:
+	+ think of IMAP to share email lists
+	+ think of LDAP to share contacts and key material
+	+ think of SMTP to validate a sender (by its domain)
+
+defs:
+
+ + link to NAI, including UTF-8, but use a more common notation for domains
+ + groups, roles, pseudonyms all look the same
+ + aliases extend them with a plus
+ + services start with a plus and contain words
+ + an ACL regimen?
+
+xover:
+
+ + we outline SASL and Kerberos mechanisms, to be defined in more detail in separate documents
+ + we recall LDAP-based PKI definitions for user keys for X.509, OpenPGP and OpenSSH
+ + we call for Remote PKCS #11 to support centrally managed private key operations
+ + we call for KIP and HAAN
+
+special:
+
+ + possibly add more constraints for federations / variable rights
+ + service use is the proper point to change identity: from loginid to userid
+ + external users may be welcomed like any other
+
+-->
+
+
+<middle>
+
+<section title="Introduction" anchor="intro">
+
+<t>Many protocols identify clients and servers through a domain name or
+a user at a domain name.  Domain names follow the stepwise delegation
+of authority that is engrained in DNS, and an added username is generally
+considered a further refinement that falls under the authority of the
+named domain.</t>
+
+<t>URI grammar mirrors this idea in its authority section.  Some additional
+information is present to facilitate resource location beyond an identity;
+these involve the scheme and an optional port, and for some schemes there
+may be a host name as a mild overspecification for a domain.</t>
+
+<t>InternetWide Identity, as introduced herein, allows domain.name and
+user@domain.name identity forms across protocols, and when included in a
+URI it treats any path, query part, port, URI scheme and
+host-instead-of-a-domain as information beyond the abstraction level of
+interest to identity.  In other words, variable paths, host names, ports and
+service protocols can occur in URIs that represent the same identity.</t>
+
+<t>InternetWide Identities are domain-scoped and intended for use in foreign
+servers that may reside in the client's domain or any other domain.
+We informally refer to this idea as "Bring Your Own IDentity (BYOID)" and to
+the technology facilitating it as "Realm Crossover" for domain.name and
+user@domain.name identities.</t>
+
+<t>Within a protocol, the client and service may each have their own
+identity and when represented as a URI they may differ in many ways,
+specifically including a possibly different domain name.  This is common
+for communication protocols such as SMTP or XMPP.  It is less common for
+protocols granting access to resources, like HTTP, where resources may be
+specified with a URI but client identity is an after-thought that gets
+mixed into that one URI as though it were a service-side identity.  This
+conflation of client and service domain relaxes when the client identity
+is described with its own URI, allowing better integration with the client
+realm and other services working for it.</t>
+
+<t>Foreign services generally implement some form of access control,
+founded on an authenticated client identity.  The process of authentication
+validates the client domain name through such mechanisms as DNSSEC with
+DANE and TLS.  An identity callback to the client realm can then add the
+user part of the client identity, according to a source whose prerogative
+it is to define it.  The foreign service composes the domain.name that it
+validated for the client with this user part to find a user@domain.name.</t>
+
+<t>Since the client's username is provided under a domain's authority over user
+names, it is possible to modify that part before it is supplied to the foreign
+service.  The name of the foreign service can be a parameter in making this
+choice, especially when it is authenticated.  This point of change to the user
+name can be helpful to change to an alias for client privacy; it may be used to
+slip into a group or role; and it can support clients from yet another realm to
+be represented by an alias or group or role under the client domain.</t>
+
+<t>This document only outlines the ideas and protocol modifications that can
+realise them.  Specifics for each of the implements are deferred to separate
+documents, even when the concepts described herein have already been shown to
+work in code.</t>
+
+</section>
+
+<section title="Bring Your Own IDentity as a Usage Pattern" anchor="byoid">
+
+<t>The general usage pattern introduced with InternetWide Identity is one
+where a client controls a set of usernames, residing under a realm of its
+own choosing.  This client realm is implemented under a client domain name.
+The client may approach services running under the same or any foreign
+domain.  In either case, the client brings their own identity composed
+of the client username and client domain; the client realm actively
+facilitates authentication under this composite identity.</t>
+
+<t>As part of client control over their own identity, a service-specific
+client username may be selected from among a set of pseudonyms available
+to the cient.  This enables the client to manage their identity, and the
+client realm can provide a number of forms to facilitate this; clients may
+create fresh identities or offer "+alias" extensions, or switch to any
+of a group member or role occupant, or even to a shared identity for an
+entire group or role.  The client realm or their user agent may remember
+choices made in the past and suggest them again during new encounters with
+the same service.</t>
+
+<t>The design challenge of InternetWide Identity is to facilitate these
+patterns in current-day protocols.  This calls for additional Realm Crossover
+protocols and techniques, and the sections below outline how application
+protocols with Kerberos [<xref target="kxover"/>] and/or
+SASL [<xref target="sxover"/>] authentication
+can be extended to connect client and service realms, usually without
+modifications to application-layer protocols.  It also explains how
+a distributed Public Key Infrastructure can be relied upon with similar
+techniques.</t>
+
+<t>The general pattern of Realm Crossover is founded on the two-level
+authority of a user@domain.name identity.  Though host, port and protocol
+as well as path and query string may be useful to locate a resource and for
+that reason incoporated into a URI, the proposed InternetWide Identity
+abstracts from those elements to allow shared identities across a
+variation of services and protocols.  Only the domain and the username are
+considered for identity.  The foreign service starts by authenticating
+the domain and makes an identity provider callback secured with mechanisms
+like DNSSEC, DANE and TLS.  The callback should be validated to a point where
+its authority over usernames under the domain is certain.  The callback can
+then be used, in a manner specific to the Realm Crossover technology, to
+authenticate the username underneath its domain.  The composition of
+these two elements, username and domain, with an "@" to separate the
+fields, forms the full identity as it is further considered by the foreign
+service.  This approach can be used for client identities, but may even be
+useful to validate service identites.</t>
+
+<!-- SUBSECTION
+<section title="New Possibilities for Existing Protocols" anchor="protonew">
+
+<t>The mere introduction of BYOID enables a number of surprising options
+for existing protocols.  Though these are not necessarily useful to all
+and certainly not the only new possibilities, they are instructive in
+understanding the reach of the proposed model for an InternetWide Identity
+with Realm Crossover.</t>
+
+<t>IMAP could be used as a mechanism to share email lists.  This is
+already possible for public lists, but not commonly used on account of
+the publication of email addresses.  For a limited/internal group, there
+are better opportunities of employing this simple paradigm, and granting
+internal and external clients access to an email list, with the benefit
+of searching with all the facilities that IMAP has to offer.  This does
+however require a form of authentication that includes Realm Crossover.
+Given that IMAP incorporates SASL authentication, this is possible.</t>
+
+<t>LDAP provides a similar story.  It is the most refined data model that
+the IETF has produced.  Public keys can be distributed for PKIX, OpenPGP
+and OpenSSH, and this is just one example of technical use cases that can
+benefit.  LDAP can also be used for providing or updating contact
+information upon request, with a better defined query mechanism than other
+specifications.  In all these use cases however, the privacy of the shared
+information may be an issue; whether to reveal the information or even
+mention its existence can be controlled by an LDAP implementation, but to
+that end clients must authenticate.  Since LDAP incorporates SASL
+authentication, this form of realm-crossing database access can indeed
+be facilitated.</t>
+
+<t>SMTP and AMQP are protocols for passing data between arbitrary users
+under arbitrary domains, with a respective focus on human interaction and
+automation.  SMTP is weighed down by massive abuse, and AMQP could fall
+prey to the same pattern.  The cause for this is unauthenticated access
+to an incoming service.  Though authentication of an individual sender
+may be overzealous and difficult in operational practice, it is reasonable
+to assume that an agent, active on behalf of a client as part of their
+realm, can authenticate as a service under the sender's realm.  In case
+of indirections (such as email lists or forwarding), there is usually an
+option of looking back a few hops with a protocol's Received or Via headers,
+at least for known indirections.  In general however, it can add value to
+authenticate a sender at the pivotal point where a sending domain's outbound
+service connects to a receiving domain's inbound service.  Both SMTP and
+AMQP can establish this with SASL.</t>
+
+</section>
+SUBSECTION -->
+
+</section>
+
+
+<!-- NOGROUP
+<section title="Definitions for InternetWide Identity" anchor="defs">
+
+<t>This section introduces normative definitions to facilitate the
+InternetWide Identity model and for Bring Your Own IDentity (BYOID)
+usage patterns.</t>
+-->
+
+<section title="Grammar of Identities" anchor="defs.nai">
+
+<t>The grammar of client and service identities are related to the
+definition of a NAI with UTF-8 support <xref target="RFC7542"/>.
+However, the NAI defaults to realm-internal use but BYOID always
+needs to express the domain, so the root of the grammar tree is
+different:</t>
+
+<t><figure><artwork><![CDATA[
+identity =  utf8-username "@" utf8-realm
+identity =/                   utf8-realm
+]]></artwork></figure></t>
+
+<t>The grammars of utf8-username and utf8-realm follow the NAI
+specification [Section 2.2 of <xref target="RFC7542"/>] and
+neither may include the "@" character.  The incorporated
+UTF-8 grammar <xref target="RFC3629"/>
+only allows the shortest representation for each code point.</t>
+
+<t>The utf8-username and utf8-realm are both considered to be
+case-insensitive, so technologies relying on Realm Crossover techniques
+can infer identity equality when nothing differs but for letter case.</t>
+
+<t>The utf8-realm is a domain name under which users may be defined;
+note how this domain is not represented in the
+Internationalised Domain Name form (IDNA) <xref target="RFC5890"/>
+that is used on the wire in DNS, but as an utf8-realm that can be mapped
+from or to IDNA for DNS-related purposes.  This allows rendering of
+domain names to users in the international form that they expect.</t>
+
+<t>Host names, if they occur in a URI or as part of a protocol, must be
+translated to a domain name in a manner that may be specific to the protocol,
+but a reasonable general strategy might be to allow precisely one level to be
+stripped off when no definitions in DNS suggest otherwise.</t>
+
+<t>For consistent BYOID portability, length considerations MUST NOT be
+constrained by support infrastructure beyond a general minimum,
+which follows the email limits [Section 4.5.3.1 of <xref target="RFC5321"/>]
+and IDNA.  The utf8-username MUST be supported with sizes up to 64 octets and
+the domain in its DNS wire form MUST support sizes up to 255 octets.
+Note that the DNS wire form can be more compressed than the utf8-realm
+[Section 4.2 of <xref target="RFC5890"/>] because UTF-8 can use up to
+4 octets for a Unicode code point, while IDNA can get up to a full
+Unicode code point per DNS octet once it is initialised; a safe minimum
+size to be certain to hold any utf8-realm is 1020 octets.
+The size of an identity MUST therefore be supported with sizes up to
+1085 octets.  Note that this imposes constraints on usable RADIUS
+implementations and the RADIUS User-Name attribute cannot be used to
+contain the utf8-realm value; the User-Name in a RADIUS implementation
+may even be unsuitable to carry the utf8-username, which for BYOID
+portability MUST be supported up to 64 octet sizes, whereas RADIUS
+permits a maximum size of 63 octets in the User-Name field.</t>
+
+<section title="Distinct Identites with Indistinguishable Grammar" anchor="defs.samelook">
+
+<t>Within the grammar of the utf8-username, more specific forms for
+usernames are the prerogative of the callback identity provider under
+each domain.  Services cannot make inferences from foreign identity
+forms, and should even be careful about inferencing knowledge from
+local identity notations, as that might impair the level of BYOID
+facilitation.</t>
+
+<t>It may nonetheless be helpful for domain administrators and users to see
+a recurring naming pattern.  For example, the pattern to attach aliases to
+usernames after a "+" symbol; identities starting with a "+" symbol could be
+locally designated to automated services and bots.  Foreign services MUST NOT
+consider such local conventions as a source of knowledge, and local services
+SHOULD NOT consider them as such.</t>
+
+<t>Clients MAY be offered various kinds of pseudonyms; a pivotal choice
+would be whether the same public/private keys can be used to represent
+their online credentials.  Reuse of keys can be externally observed, and
+such light-weight aliasing could be mirrorred in a visible relation such
+as a "+alias" extension to a username.  It is still possible to separate
+access control for such lighter aliases.</t>
+
+<t>Client domains MAY facilitate groups and/or roles, two related concepts
+with possibly different service semantics.  Clients may be allowed to act
+towards a group/role under a dedicated alias for group/role communication,
+effectively as a "group member" or "role occupant".  This would be
+similar to the alias mechanism towards external services, and might help to
+constrain access to group members / role occupants via different rule sets.
+These issues of access control however, are not related to the representation
+of these usernames; they MAY however be locally chosen to take the form
+groupname+membername to facilitate textual pattern matching in access rules,
+but they would not be different when observed by foreign services.  The client
+domain MAY facilitate the client acting on behalf of the group/role as a
+whole, without adding a member/occupant extension.</t>
+
+</section>
+
+</section>
+
+<section title="Example Targets for Access Control" anchor="defs.resource">
+
+<t>The targets of access control are often called "resource".  We specify
+a few forms that may be useful to consider, without it meaning to be the
+last word.</t>
+
+<t>One form worth considering might be a Communication ACL.  For a given
+local identity, this ACL would list the remote (client) identities that are
+welcomed for communication.  A concrete usage pattern of this mechanism
+could be to blacklist everything but a few welcomed peers; or to whitelist
+everything but for invasive parties; or to graylist access and require the
+prospective communication partner to jump through some hoops before being
+welcomed.  It is RECOMMENDED to verify access from a remote identity
+before initiating communication with them, thus ensuring their ability to
+respond to the sending identity.</t>
+
+<t>The form of a Communication ACL is very general, and covers any protocol
+that connects a remote identity with the local identity in control of the
+ACL.  So, after sending an email over SMTP, a response over SIP is also
+possible and LDAP may grant download for public keys for the local identity
+based on the same Communication ACL for the local identity.  But while the
+Communication ACL spans across protocols, it should not span identities;
+a local user is likely to use pseudonyms for the specific purpose of regulating
+access to this identity.  Crossover should at best be limited to redirection
+from an access-blocking identity to a welcoming one.</t>
+
+<t>Another general form could be that of a Resource ACL, which may be
+centered around an identity in the form of a UUID <xref target="RFC4122"/>.
+Again, this need not be constrained to a protocol but may represent more
+general ideas, such as "storage space" or "versioning system".  Whether
+these are delivered over HTTP, LDAP, MQTT or GIT should not matter to the
+access control mechanism.  Related, but different, are Resource Instances,
+which expand a general idea with a UUID-specific string format to describe
+a particular instantiation of the general idea; for example, a collection
+or object in a storage space; for example, a repository or version in a
+versioning system.</t>
+
+</section>
+
+<section title="Example Regimen for Access Control" anchor="defs.acl">
+
+<t>Access control is exercised while a service is accessed.  The process
+starts with an authenticated client identity and derives what
+access rights may be granted to the identified client.</t>
+
+<t>The facilitation of BYOID in access control demands that the realm in
+the client identity is fully taken into account.  When any local realm is
+at best used for compressed representation but not to differentiate rights,
+an access control solution can be completely open to foreign clients.</t>
+
+<t>One difference between foreign clients and local ones is the level of
+trust bestowed on them, another is the level of knowledge about their
+identity grammar.  Specifically, the username forms suggested above for
+"+service" or perhaps "+service+arg1+arg2+arg3", for "client+alias" or
+"groupname+membername" may all have local meaning, especially because for
+a given name part "service" or "client" or "groupname" there is some local
+knowledge about the kind of identity that they represent.  Though being
+permissive to foreign clients is vital for BYOID, differentiating rights
+for local identities (and identity patterns) can be useful in many
+operational contexts.</t>
+
+<t>As a general mechanism for access control, it is RECOMMENDED to iterate
+over a client identity by gradually generalising the form.  Each of the
+forms might be called a "selector".  Going from concrete to abstract,
+ach Selector could serve as a (partial) identity string while looking for
+matching access rules.  Such lookups could also incorporate the target of
+access control.  Flags representing specific access rights such as read and
+write could be part of the lookup or returned as a result of it.  The first
+identity for which an access rule matches is considered the proper one for
+the client identity being iterated over.</t>
+
+<!--TODO: "client identity" or "remote identity"? -->
+
+<t>The most specific username is the utf8-username field that passed
+authentication.  The most abstract username is a wildcard, which we shall
+write as "".  For local users, it may make sense to iterate over more
+specific forms as well, such as splitting after internal "+" signs.
+For example, "john+cook" could yield a list "john+cook", "john+" and
+"" going from specific to general.</t>
+
+<t>The most specific domain name is the utf8-realm field that passed
+authentication.  The most abstract domain is the top-level domain ".",
+and intermediate domains can be written with a prefixed dot to distinguish
+them from a full domain name.  For example, "example.com" could yield a list
+"example.com", ".com" and "." going from specific to general.</t>
+
+<t>The combined iteration for a client identity uses domain iteration as an
+outer loop and username iteration as an inner loop.  So, combining the
+examples above including local interpretation of the username part,
+"john+cook@example.com" could yield a list "john+cook@example.com",
+"john+@example.com", "@example.com", "john+cook@.com", "john+@.com",
+"@.com", "john+cook@.", "john+@.", "@." where the latter is always
+the most abstract form found for a client@domain.name form.</t>
+
+<t>Most of this example list is likely to remain unused; several
+of these forms could be blocked with pragmatic rules, such as barring
+".com" domains from an ACL.  When also the local interpretation
+of the username is barred, the lookups for such a remote client are
+reduced to "john+cook@example.com", "@example.com", "john+cook@." and
+"@." forms only,
+but for "john+cook@labs.example.com" there would still be the meaningful forms
+"john+cook@labs.example.com", "@labs.example.com", "john+cook@.example.com",
+"@.example.com", "john+cook@." and "@." to consider in the ACL.</t>
+
+<t>Note the importance of the initial dot in the domain name iteration.
+It differentiates identities as defined by a realm from identities as
+defined by a child realm.  One other choice that an ACL might make is
+to constain the iteration to go up one domain level and allow "." as
+a wildcard domain.</t>
+
+<t>In general, the application calling for access control is in the best
+position to determine what to consider.  An SMTP port 25 for external
+submissions may not want to consider internal identity forms, whereas
+an SMTP port 587 for submission by internal users may desire just that.</t>
+
+</section>
+
+<!-- NOGROUP
+</section>
+-->
+
+
+
+<section title="Realm Crossover for Kerberos" anchor="kxover">
+
+<t>This section provides a sketch of how Realm Crossover may be established
+for Kerberos.  The complete specification is deferred to other documents.</t>
+
+<t>Kerberos uses a realm controller known as the KDC.  It is possible for
+the KDCs of two realms to connect, though this is not a dynamic process that
+can be called upon when a client first attempts to acces a foreign service.
+Realm Crossover for Kerberos is an "Impromptu" extension to the existing
+facilities for Realm Crossover.</t>
+
+<t>Only the client KDC and service KDC need to support Realm Crossover to
+allow this to work.  Most current-day clients facilitate principal name
+canonicalization <xref target="RFC6806"/>, which suffices for Realm Crossover.
+The client KDC needs to realise that a request was made for a service that
+is part of an external realm, then assure the existance of a realm-crossing
+relation with that realm's KDC, and finally return a server referral
+[Section 8 of <xref target="RFC6806"/>] in order to redirect the client,
+with the required credentials, to the KDC of the service realm.</t>
+
+<t>A protocol KXOVER has been devised to connect two KDCs.  It relies on
+TLS and derives a key from the master key to install as the crossover key.
+As part of the KXOVER protocol, such details as a period for the service
+are exchanged.  Since this crossover key services any client on one KDC to
+connect to any service on another KDC, it is highly efficient.  Only the
+first "impromptu" call upon the remote KDC can be somewhat time-consuming;
+beyond that, the procedures fall back to symmetric key management only.
+When a crossover ticket is used regularly, it probably makes sense to refresh
+it before the old ticket expires.</t>
+
+<t>It is worth noting that the secrecy of the crossover keys established over
+TLS are only as secure as TLS is.  As long as no Post Quantum mechanisms are
+used, the shared key between the client and service realm could be grounds for
+abuse.  The security model of Kerberos permits derivation of all derived keys
+and that includes encryption keys.  Although Kerberos with proper initiation
+can be a Post Quantum technology, this is not true when KXOVER is added.</t>
+
+<t>Kerberos supports anonymity, but that would not allow distinction between
+identities of clients.  It does not facilitate pseudonyms when requesting a
+particular service on another realm; the KDC however, is in a perfect
+position to do just that.  Extensions can be easily imagined, whereby
+a client sets a flag in the initial exchange to indicate support for
+client identity changes, either from the KDC's recollection of previous
+desires or from an explicit request by the client.  As long as the KDC
+reflects this flag, identity changes could be requested or allowed as a
+protocol extension.</t>
+
+<t>The current DNS records for Kerberos specify where to find the KDC for
+a realm, but not for a service.  This has never been considered secure, but
+since then DNSSEC has been rolled out, and it can now be done securely.
+This means that a client or its KDC can look for a service host or domain,
+infer the realm under which it resides, and lookup the ticket for the
+protocol and host/domain under that realm.  This is not current practice
+yet.</t>
+
+<t>In summary, the extensions to support Kerberos Realm Crossover
+are (1) the KXOVER protocol, (2) DNS lookup of realm names for hosts/domains,
+(3) optional support of pseudonymity.  With the exception of the optional
+last point, these can be implemented in the KDC alone.</t>
+
+</section>
+
+<section title="Realm Crossover for SASL" anchor="sxover">
+
+<t>SASL authentication is built into many Internet protocols.
+It facilitates an extensible set of mechanisms, passed inside
+the application protocol which remains blissfully unaware of
+its details and upgrades.</t>
+
+<t>It is not generally safe to carry SASL over plaintext connections,
+and the customary use case runs it within a secure application protocol,
+such as after a STARTTLS exchange.  To avoid undetected relaying of SASL
+traffic to another resource, a precaution of channel binding may be used,
+where non-secret but unmistaken parts of the secure application protocol
+are mixed into a cryptographic computation to assure that the SASL server
+is the assumed one.</t>
+
+<t>To support Realm Crossover, it is possible to pass SASL to a
+backend server over Diameter <xref target="RFC6733"/>.  The backend
+would be selected for the client's realm and looked up with Diameter's
+NAPTR and) SRV records in DNSSEC and connected under protection of
+DANE and (D)TLS.  This is effectively an identity callback to a
+client realm.  Under Diameter, authentication is bidirectional, so
+the client realm is aware of the requesting service realm.</t>
+
+<t>Diameter is valuable because it is designed to authenticate across
+administrative domains, and pass success or failure along with descriptive
+attributes such as an authorisation username to a requesting service realm.
+This usage is called Network Access Service <xref target="RFC7155"/>.
+The value of passing just success or failure by default is that no
+resources are made available; as a result, a Diameter service can be
+made available as a public authentication callback service, unlike a
+resource-supplying protocol such as IMAP.</t>
+
+<t>Care must be taken to not ever pass traffic back up from Diameter to
+a higher-level protocol.  SXOVER ensures this by loosing vital information
+in that case, namely for channel binding.  Services other than Diameter
+MUST reject externally supplied channel binding octet strings and instead
+form their own.  That way, a resource-supplying application protocol could
+not possible be attacked in the backend of a foreign service contacted by
+the client.  That is, not when channel binding is being used.  The flip-side
+of this coin is that the foreign service contacted by the client MUST relay
+channel binding information to its Diameter backend, which then forwards it
+to the point where cryptographic computations are performed, in the client
+realm.  Channel binding effectively becomes the client's authentication of
+the foreign service.</t>
+
+<t>Based on this, only SASL mechanisms that support channel binding are
+suited for Realm Crossover.  There is another requirement however, and that
+is end-to-end encryption.  Given that SASL mechanisms are not generally safe
+to pass over unencrypted channels, they cannot generally be trusted to pass
+through a foreign service either.  A secret between the client and its realm
+must be obtained beforehand, and used to encrypt the exchange.  Note the
+relative ease of obtaining such a key relative to proving client identity.
+A special SASL mechanism can then employ this secret, along with channel
+binding information, to securely wrap another SASL mechanism that does not
+need to live up to these requirements.  That special SASL mechanism is
+GS2-SXOVER-PLUS; it is possible that other mechanisms are devised to allow
+the same usage pattern however.</t>
+
+<t>Two last concerns to note for the special SASL mechanism are that it must
+mention the client's realm in a form readable to the foreign server.  This
+part will also be validated by the foreign server, while making the Diameter
+back-call.  The wrapped SASL mechanism therefore does not supply the client
+realm, but only its username, precisely its prerogative to define.  Also,
+the form of channel binding used must be visible to the foreign server, so
+it can pack the information for relaying over Diameter.  This is generally
+possible with GS2 mechanisms, though other forms can have specialised
+representations for the same information.</t>
+
+<t>Note that not all these concerns necessarily apply for clients that are
+local to the "foreign" service.  Even when they may also pass over Diameter,
+their traffic may remain "internal" and "trusted" and therefore more mechanisms
+may be available than for a truly foreign client.  It is common in SASL to
+allow the server to present acceptable SASL mechanisms, so this can be part
+of operational practices.</t>
+
+<t>To allow SASL over Diameter, a few attribute-value pairs need to be
+defined under its Network Access Profile <xref target="RFC7155"/>.
+These are (1) SASL-Token, for relaying SASL's binary octets of a token in
+either direction, but only when one is supplied by the SASL endpoint;
+(2) SASL-Mechanism, a string listing space-separated mechanism names
+that are acceptable to the foreign service, or selected by the client;
+(3) SASL-Channel-Binding, to relay binary channel binding information from
+the foreign service to the client's Diameter server, and to allow the client
+and its realm to work out that no extra resources are in the loop.</t>
+
+<t>Not all application protocols support SASL.  Modern IRC does, and may
+benefit from incorporating Realm Crossover to make abusive patterns less
+likely, and to reserve usernames for returning clients.  The most notable
+omission is HTTP, which resorts to higher layers, often involving manual
+actions and code mixtures with executable content from uncontrolled remote
+sites.  An extension of HTTP with SASL is part of our proposal for realm
+crossover as an overall solution.</t>
+
+<t>In summary, the extensions to support SASL Realm Crossover
+are (1) support for SASL over Diameter, (2) the GS2-SXOVER-PLUS mechanism
+and its incorporation into user agents and SASL over Diameter; (3) the
+reliance on Diameter for client authentication in foreign servers.  Finally,
+(4) non-SASL-aware protocols need to be extended to support SASL.</t>
+
+</section>
+
+
+<section title="Realm Crossover for PKIX" anchor="pkix">
+
+<t>The definition of PKIX references LDAP for the retrieval
+of certificates from a certificate's DistinguishedName.  Given the
+potential for access control when Realm Crossover enables requesters
+to authenticate, arbitrary privacy controls can be enforced using
+these mechanisms.  LDAP services can pass through STARTTLS and the
+certificate used may be assured through DNSSEC and DANE to allow
+remotes to validate the authority of the information in LDAP,
+specifically when its DistinguishedName patterns coincide with the
+domain name <xref target="RFC2257"/> and when usernames are located
+with (uid=...) search filters.</t>
+
+<t>When identities are managed with the BYOID intent, it makes
+sense to create key pairs for PKIX, OpenPGP and perhaps OpenSSH
+and store those in LDAP for retrieval by approved parties.
+This establishes the long-missed Public Key Infrastructure for
+the Internet, to benefit security of email and most other forms
+of communication.</t>
+
+<t>Note how PKIX currently relies on "central" organisations to
+approve of certifictes, and how LDAP may be supportive of a more
+distributed mechanism.  Also note how the mechanisms can be combined
+for maximum strength; one example use of this would be to facilitate
+federations with authentication that spans the Internet plus a root
+key that facilitates just the federation.</t>
+
+</section>
+
+
+<section title="Hosted Private Keys with Remote PKCS #11" anchor="rpkcs11">
+
+<t>Clients may want to use key-based mechanisms even on platforms
+that cannot be trusted to protect these well, such as a mobile phone
+or other easily lost device.  Such applications, as well as the desire
+to use the same keying material on multiple devices and the reflection
+that operational control of private keys with proper rollovers is
+difficult and may for a large portion of users better be left to their
+administrators, all combine to the idea that a Remote PKCS #11 service
+may be useful.</t>
+
+<t>When identities are generated along with public key certificates
+that can be looked up in LDAP, it is useful to facilitate the matching
+private keys in such a Remote PKCS #11 service.</t>
+
+<t>We have prepared an LDAP scheme to reflect private key references
+alongside public key certificates (with intended readability only to
+the key owners) and we have prepared a direct mapping of the PKCS #11
+interface to a request/response format that supports locally callable
+functions that are actually applied remotely to private keys contained
+there, perhaps in a highly secured context.</t>
+
+</section>
+
+
+<section title="Keyful Identity Protocol" anchor="kip">
+
+<t>The enhancement of authentication with Realm Crossover allows a
+great diversity of new use cases; but encryption still relies on the
+publication of public key certificates by recipients.  When the
+requirement to encrypt sensitive content exists however, there is an
+immediate urge to have all recipient's public keys and not make an
+exception by sending unencrypted content to one recipient that lacks
+one.  In short, there is a desire for sender-initiated encryption.</t>
+
+<t>We devised a Keyful Identity Protocol (KIP) to fulfil this need.
+Its essential function is to take in a symmetric key and wrap it in
+a manner that can only be decrypted by an authenticated party.  In
+other words, it provides encryption to any client who can authenticate.
+The actual content is not passed over KIP, but the session keys are.</t>
+
+<t>Encryption of session keys is done with a fixed key stored in the
+KIP service, and cryptographically bound to an access control list.
+Requests to authenticate require no authentication, and are ideally
+performed on a KIP service running under each recipient's domain.
+To request decryption, a recipient must authenticate, and their
+session key can be provided when the cryptographically bound
+access control list allows it.</t>
+
+<t>KIP can also be used to sign a checksum, which is a notably different
+service from authentication.  This requires authentication by the
+signing party and is best done at their realm's KIP service.  To gain
+trust, a recipient would contact the KIP service under a (validated)
+signer's realm and see it approved.</t>
+
+<t>KIP Documents are a nested sequence of data and wrapped session keys
+and signatures.  This involves signed references, so an object may be
+stored outside of a KIP Document, and still be validated by it.  By
+defining a media type for KIP Documents, a data URI
+<xref target="RFC2397"/> can be made that triggers a handler when
+accessed by user agents such as HTTP and SMTP clients.</t>
+
+<t>The wrapped session keys of KIP underly the GS2-SXOVER-PLUS
+mechanism <xref target="sxover"/>, without other dependency on the
+protocol; KIP service can be used to help clients to the initial key
+that provides end-to-end encryption between their user agent and the
+identity callback server in the client realm.</t>
+
+<t>In spite of its potential strength, KIP is operationally really simple
+to deploy.  It requires a secure storage mechanism for its fixed long-term
+key, but the only administrative control needed is the creation and destruction
+of virtual hosts; and a basic roll-out only needs one.  KIP can be a client
+to Realm Crossover for straightforward authentication.</t>
+
+</section>
+
+
+<section title="Helm Access (from Arbitrary Nodes)" anchor="haan">
+
+<t>Domains may seem to be the anchor point for online identity, but in
+reality they often have fallbacks to a single email address, to which
+unencrypted email is sent.  Other online resources reproduce this insecure
+habit.  Email address may go awry, and with it, possibly the control over
+a domain name.  The general problem here is that no problem exists for
+"identity bootstrapping".  Realm crossover can be used to remedy that.</t>
+
+<t>Online resources usually have a starting point, where administrative
+control may be exercised, including the removal of the resource and creation
+of new ones.  It may even include the addition of subordinate identities,
+such as domain users or subdomains under a domain name.  We introduce the
+general idea of a "Helm of Control", or helm for short, as the point of
+access to this facility.</t>
+
+<t>We propose the use of Realm Crossover to gain access to one's helm.
+This involves authentication with a (possibly external) credential and
+not the ability to receive unencrypted email, so it is already more
+constrained.  In addition, it should be straightforward to control in
+a more refined access how control can be held.  At the very least, it
+is desirable to allow access form multiple (external) identities to
+have no single point of failure when it comes to access recovery.</t>
+
+<t>Use cases may involve depositing credentials with others who can
+serve as fallbacks for access.  This is especially useful by handing
+them their own access control, possibly leading to their own Helm,
+where they can only control those online resources that they are
+supposed to control.  In general, a many-to-many mapping from identity
+to online resource at a given provider seems the most useful.</t>
+
+<t>One use of this access pattern include control over the removal of a
+person's online presence, for instance by family after a loved one passes
+away or after a company goes into bankruptcy.  At least some laws discard
+an individual's right to privacy upon death and may therefore not be
+supportive of a family's desire to erase online presence without going
+through disturbing practices in full control of a service provider; and
+not all of them see a benefit in destroying data.</t>
+
+<t>HAAN is short for Helm Arbitrary Access Node; the HAAN service
+generates a worthless username and password from scratch.
+Note that any fresh account is without value until it is setup with online
+resources, perhaps by accessing a Helm.  Though supplied by a given realm,
+the HAAN service for a realm does not even need to store the credentials;
+it generates a random username with a lot of entropy and uses an internally
+held, fixed key to derive an accompanying password.  Later, when a client
+wants to gain access, the provided username is combined with the fixed
+key to recompute the password and perform any desired check.</t>
+
+<t>The implementation of HAAN is founded on a SASL mechanism named
+GS2-HAAN-GENERATE, which should be run directly with the supporting
+realm (or perhaps through an end-to-end encryption tunnel like the
+one for SXOVER).  Later authentication is possible using any SASL
+mechanism that uses a password, usually with GS2-SXOVER-PLUS wrapped
+around it so a foreign provider can use it to gain access to its Helm.</t>
+
+<t>It is not generally advised to require authentication when adding a
+HAAN identity to a Helm.  First, it exchanges more credential information
+than strictly desired; second, users do not type identities from slips
+of paper but use copy/paste; third, backups exist in the form of additionally
+registered identities to access the helm; fourth, because HAAN can generate
+extra entropy to allow correction of typo's when a client enters a falsely
+entered identity as an authorisation identity.  When desiring a 128-bit
+security level, HAAN might generate 160 bits and as long as going from
+the proper 160-bit value to an authorisation identity can be described
+with entropy less than the extra 32 bits, the validation with HAAN can
+still provide the 128-bit security level.</t>
+
+<t>Dedicated methods can be built for HAAN-generated secrets.  One that
+springs to mind is TOTP <xref target="RFC6238"/>,
+where the only storage needed on the server is
+for replay avoidance, and only when nothing specific to the SASL exchange
+itself avoids replay.  When replay is not to be suspected, the TOTP exchange
+can be accepted immediately; otherwise, a challenge/response exchange may
+remedy any risk of replay.  The server can safely err on the cautious side,
+and use something like a Bloom filter to detect possibly replay over the
+past timer period.</t>
+
+<t>In spite of its promising potential, HAAN is operationally really simple
+to deploy.  It requires a secure storage mechanism for its fixed long-term
+key, but the only administrative control needed is the creation and destruction
+of virtual hosts; and most roll-outs will only support one.</t>
+
+
+</section>
+
+</middle>
+
+
+<back>
+
+<references title="Normative References">
+<?rfc include="reference.RFC.2257.xml"?>
+<?rfc include="reference.RFC.2397.xml"?>
+<?rfc include="reference.RFC.3629.xml"?>
+<?rfc include="reference.RFC.4122.xml"?>
+<?rfc include="reference.RFC.5321.xml"?>
+<?rfc include="reference.RFC.5890.xml"?>
+<?rfc include="reference.RFC.6238.xml"?>
+<?rfc include="reference.RFC.6733.xml"?>
+<?rfc include="reference.RFC.6806.xml"?>
+<?rfc include="reference.RFC.7155.xml"?>
+<?rfc include="reference.RFC.7542.xml"?>
+</references>
+
+<!--
+<references title="Informative References">
+<?rfc include="reference.RFC.6717.xml"?>
+<?rfc include="reference.RFC.3579.xml"?>
+<?rfc include="reference.RFC.4121.xml"?>
+<?rfc include="reference.RFC.5246.xml"?>
+<?rfc include="reference.RFC.7055.xml"?>
+</references>
+-->
+
+</back>
+
+</rfc>
