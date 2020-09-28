@@ -29,7 +29,7 @@
 		</address>
 	</author>
 
-	<date day="6" month="October" year="2015"/>
+	<date day="28" month="September" year="2020"/>
 
 	<abstract>
 	<t>Domains and domain user identities are available in many protocols,
@@ -307,6 +307,32 @@ may even be unsuitable to carry the utf8-username, which for BYOID
 portability MUST be supported up to 64 octet sizes, whereas RADIUS
 permits a maximum size of 63 octets in the User-Name field.</t>
 
+</section>
+
+
+<section title="Example Use Cases" anchor="example">
+
+<t>This section informally describes use cases that may be useful.</t>
+
+<section title="Example of a Local Identity Grammar" anchor="nai.localid">
+
+<t>Under the prerogative of a realm's identity provider a more specific
+grammar may be used, and some forms may even be distinguished by notation.
+Such distinctions however, MUST NOT be assumed by foreign services
+and SHOULD NOT be assumed by anything in the provider's realm if that
+would break BYOID portability.  Having said that, we do give a
+few informative ideas:
+<list style="symbols">
+<t>john@example.com might be a user</t>
+<t>john+cook@example.com might be a light-weight alias, administratively scoped under user john@example.com</t>
+<t>mary@example.com might be a different user, or an external user granted a local alter ego, or an unrecognisable pseudonym for john@example.com</t>
+<t>cooks@example.com might be a group of users that can be addressed all at once by a variety of services, each with their own group semantics</t>
+<t>cooks+john@example.com might be a group member for cooks@example.com, as an in-group pseudonym for a user under the same or another domain</t>
+<t>+stove@example.com might represent a service</t>
+<t>+stove+nr3+elt5@example.com might represent a service with sub-addressing parameters nr3 and elt5</t>
+</list></t>
+
+<!-- WORDYWORK
 <section title="Distinct Identites with Indistinguishable Grammar" anchor="defs.samelook">
 
 <t>Within the grammar of the utf8-username, more specific forms for
@@ -344,6 +370,9 @@ domain MAY facilitate the client acting on behalf of the group/role as a
 whole, without adding a member/occupant extension.</t>
 
 </section>
+
+WORDYWORK
+-->
 
 </section>
 
@@ -464,16 +493,21 @@ an SMTP port 587 for submission by internal users may desire just that.</t>
 
 </section>
 
+</section>
+
 <!-- NOGROUP
 </section>
 -->
 
 
+<section title="Realm Crossover Techniques" anchor="xover">
+
+<t>This section details how Realm Crossover may be established with
+Kerberos and SASL, and how PKIX may benefit from it.  The descriptions
+are provided to sketch the structure of the solution, but complete details
+are worked out in other documents.</t>
 
 <section title="Realm Crossover for Kerberos" anchor="kxover">
-
-<t>This section provides a sketch of how Realm Crossover may be established
-for Kerberos.  The complete specification is deferred to other documents.</t>
 
 <t>Kerberos uses a realm controller known as the KDC.  It is possible for
 the KDCs of two realms to connect, though this is not a dynamic process that
@@ -485,30 +519,31 @@ facilities for Realm Crossover.</t>
 allow this to work.  Most current-day clients facilitate principal name
 canonicalization <xref target="RFC6806"/>, which suffices for Realm Crossover.
 The client KDC needs to realise that a request was made for a service that
-is part of an external realm, then assure the existance of a realm-crossing
-relation with that realm's KDC, and finally return a server referral
+is part of an external realm, obtain a (new or pre-existing) realm-crossing
+relation with that realm's KDC, and respond with a server referral
 [Section 8 of <xref target="RFC6806"/>] in order to redirect the client,
-with the required credentials, to the KDC of the service realm.</t>
+armed with realm-crossing credentials, to the KDC of the service realm.</t>
 
-<t>A protocol KXOVER has been devised to connect two KDCs.  It relies on
-TLS and derives a key from the master key to install as the crossover key.
-As part of the KXOVER protocol, such details as a period for the service
-are exchanged.  Since this crossover key services any client on one KDC to
-connect to any service on another KDC, it is highly efficient.  Only the
+<t>For the creation of a new, impromptu realm crossover relation between
+two KDCs, a new protocol KXOVER has been devised.  It builds on
+TLS and derives a crossover key from the TLS master key.
+As part of the KXOVER protocol, details such as a time window for crossover
+are negotiated.  Since the same crossover key can help any client on one KDC to
+connect to any service on another KDC, this procedure is efficient.  Only the
 first "impromptu" call upon the remote KDC can be somewhat time-consuming;
 beyond that, the procedures fall back to symmetric key management only.
-When a crossover ticket is used regularly, it probably makes sense to refresh
+When a crossover ticket is used regularly, it would make sense to refresh
 it before the old ticket expires.</t>
 
 <t>It is worth noting that the secrecy of the crossover keys established over
-TLS are only as secure as TLS is.  As long as no Post Quantum mechanisms are
-used, the shared key between the client and service realm could be grounds for
+TLS are only as secure as TLS is.  When no Post Quantum mechanisms are
+used, the crossover key derived by the client and service realm could be grounds for future
 abuse.  The security model of Kerberos permits derivation of all derived keys
 and that includes encryption keys.  Although Kerberos with proper initiation
-can be a Post Quantum technology, this is not true when KXOVER is added.</t>
+can be a Post Quantum technology, this may no longer hold under Realm Crossover.</t>
 
 <t>Kerberos supports anonymity, but that would not allow distinction between
-identities of clients.  It does not facilitate pseudonyms when requesting a
+different clients.  It does not facilitate pseudonyms when requesting a
 particular service on another realm; the KDC however, is in a perfect
 position to do just that.  Extensions can be easily imagined, whereby
 a client sets a flag in the initial exchange to indicate support for
@@ -518,7 +553,7 @@ reflects this flag, identity changes could be requested or allowed as a
 protocol extension.</t>
 
 <t>The current DNS records for Kerberos specify where to find the KDC for
-a realm, but not for a service.  This has never been considered secure, but
+a realm, but not for a service.  This was initially considered insecure, but
 since then DNSSEC has been rolled out, and it can now be done securely.
 This means that a client or its KDC can look for a service host or domain,
 infer the realm under which it resides, and lookup the ticket for the
@@ -644,7 +679,7 @@ these mechanisms.  LDAP services can pass through STARTTLS and the
 certificate used may be assured through DNSSEC and DANE to allow
 remotes to validate the authority of the information in LDAP,
 specifically when its DistinguishedName patterns coincide with the
-domain name <xref target="RFC2257"/> and when usernames are located
+domain name <xref target="RFC2247"/> and when usernames are located
 with (uid=...) search filters.</t>
 
 <t>When identities are managed with the BYOID intent, it makes
@@ -663,8 +698,19 @@ key that facilitates just the federation.</t>
 
 </section>
 
+</section>
 
-<section title="Hosted Private Keys with Remote PKCS #11" anchor="rpkcs11">
+
+
+<section title="New Application Protocols" anchor="newproto">
+
+<t>The idea of BYOID and its technological embedding as Realm Crossover
+allow a few useful ideas to be worked out in new application protocols.
+The general idea of these protocols is described below, but the
+complete details are described in other documents.</t>
+
+
+<section title="Remote PKCS #11" anchor="rpkcs11">
 
 <t>Clients may want to use key-based mechanisms even on platforms
 that cannot be trusted to protect these well, such as a mobile phone
@@ -824,8 +870,62 @@ to deploy.  It requires a secure storage mechanism for its fixed long-term
 key, but the only administrative control needed is the creation and destruction
 of virtual hosts; and most roll-outs will only support one.</t>
 
+</section>
+
+<section title="InternetWide Roaming" anchor="roaming">
+
+<t>Networking is increasingly becoming an application under management
+of users.  Network authentication is customarily generalised in EAP,
+whereas application authentication is generalised with SASL.  An ability
+to run SASL over EAP supports the use of client credentials for network
+access applications such as VPN, 802.1x or Bluetooth.</t>
+
+<t>When SASL is backported over Diameter, an extra option arises, where
+the user is offered a tunnel to a home network.  Using ESP, such a tunnel
+would be protected from content inspection and manipulation.  And quite
+interestingly, ESP could be carried over a multitude of protocols.</t>
+
+<t>When providing network access, this scheme has the benefit that nothing
+is known about the traffic, and so no responsibility is taken for those
+contents.  Furthermore, the IP address from which this content is shared
+is only a tunnel endpoint to a home realm, but not a general carrier for
+traffic.  This could be a type of service to offer without concerns.</t>
+
+<t>Packets of an ESP tunnel may travel over a variety of carriers, not
+just over IP.  There could be an embedding for directly carrying it over
+ethernet or PPP, for example.  There is an additional need for
+key exchange, but the UDP encapsulation for ESP <xref target="RFC3948"/>
+solves that with a simple prefix to the key exchange traffic, so that
+a complete tunnel protocol arises.  This tunnel protocol can pass through
+PNAT using the UDP encapsulation.</t>
+
+<t>This allows wired and wireless ethernets to employ 802.1x access
+restriction with SASL over EAP, to open up an ESP/IKE uplink to a tunnel
+server whose address information is provided in a Diameter response
+when SASL over Diameter succeeds.  A base station may respond to a
+query for an "InternetWide Roaming" identity with just this dialog.</t>
+
+<t>Similar approaches might be employed with the Bluetooth Network
+Encapsulation Profile to grant nearby nodes access to an ethernet,
+albeit at much lower speed, but can reduce the ethernet header to
+just the ethernet type.  As a fallback scenario, mobile users may
+be helped with the older L2TP/IPsec stack which is available by default
+in most current-day configurations and this may serve as a fallback
+in circumstances where InternetWide Roaming is not available in a more
+direct form, but generic Internet access is.  The simplified access
+form however, can be particularly interesting for small devices,
+especially when the ESP traffic is founded on a fixed key.</t>
+
+<t>The integration of SASL into EAP adds a use case for key extraction
+from SASL, which is sometimes considered an older possibility, but
+which regains interest when it can setup end-to-end protection keys.
+In a scenario where SASL is followed by ESP, it may provide extra
+entropy to be mixed into the key exchange <xref target="RFC8784"/>.</t>
 
 </section>
+
+</section>
+
 
 </middle>
 
@@ -833,9 +933,10 @@ of virtual hosts; and most roll-outs will only support one.</t>
 <back>
 
 <references title="Normative References">
-<?rfc include="reference.RFC.2257.xml"?>
+<?rfc include="reference.RFC.2247.xml"?>
 <?rfc include="reference.RFC.2397.xml"?>
 <?rfc include="reference.RFC.3629.xml"?>
+<?rfc include="reference.RFC.3948.xml"?>
 <?rfc include="reference.RFC.4122.xml"?>
 <?rfc include="reference.RFC.5321.xml"?>
 <?rfc include="reference.RFC.5890.xml"?>
@@ -844,6 +945,7 @@ of virtual hosts; and most roll-outs will only support one.</t>
 <?rfc include="reference.RFC.6806.xml"?>
 <?rfc include="reference.RFC.7155.xml"?>
 <?rfc include="reference.RFC.7542.xml"?>
+<?rfc include="reference.RFC.8784.xml"?>
 </references>
 
 <!--
